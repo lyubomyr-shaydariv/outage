@@ -1,0 +1,56 @@
+#!/bin/bash
+
+set -TEeuo pipefail
+
+declare -r BIN_DIR='./bin'
+declare -r CACHE_DIR='./.cache'
+declare -r OUT_DUR='./out'
+declare -r TMP_DIR='./.tmp'
+
+say() {
+	echo -e "\e[0;36m$0: \e[0m$@" >&2
+}
+
+mkdir --parents -- "$CACHE_DIR" "$OUT_DUR"
+if [[ -d "$TMP_DIR" ]]; then
+	rm --recursive -- "$TMP_DIR"
+fi
+mkdir --parents -- "$TMP_DIR"
+
+say 'importing to sqlite...'
+{
+	say '#1: download json'
+	bash -- "$BIN_DIR"/download-json.sh "$CACHE_DIR" \
+		| ifne tee -- "$TMP_DIR"/outage.json
+} \
+	| {
+		say '#2: extract and normalize text'
+		jq --raw-output --tab --from-file "$BIN_DIR"/import-extract-text.jq \
+			| sed --regexp-extended --file "$BIN_DIR"/import-normalize-text.sed \
+			| ifne tee -- "$TMP_DIR"/outage.txt
+	} \
+	| {
+		say '#3: tabularize data'
+		awk -f "$BIN_DIR"/import-tabularize.awk \
+			| ifne tee -- "$TMP_DIR"/outage.tsv
+	} \
+	| {
+		say '#4: import data'
+		sqlite3 -batch -tabs -- "$TMP_DIR"/outage.db < "$BIN_DIR"/create-scheme.sql
+		sqlite3 -batch -tabs -- "$TMP_DIR"/outage.db ".import '|cat -' outage"
+	}
+say 'importing to sqlite done'
+
+say 'querying and exporting from sqlite...'
+while IFS=$'\t' read -r GROUP _; do
+	while IFS=$'\t' read -r ID BEGIN END _; do
+		printf '%s\t%s\t%s\n' "$ID" "$BEGIN" "$END"
+	done < <(sqlite3 -batch -tabs -cmd ".parameter set :group '$GROUP'" -- "$TMP_DIR"/outage.db < "$BIN_DIR"/select-events.sql) \
+		| {
+			say "exporting group $GROUP..."
+			awk -f "$BIN_DIR"/export-calendarize.awk -v GROUP="$GROUP" \
+				> "$OUT_DUR/$GROUP.ics"
+			say "exporting group $GROUP done"
+		}
+done < <(sqlite3 -tabs -- "$TMP_DIR"/outage.db < "$BIN_DIR"/select-groups.sql)
+say 'querying and exporting from sqlite done'
