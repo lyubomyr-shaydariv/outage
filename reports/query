@@ -1,0 +1,6 @@
+#!/bin/bash
+
+set -TEeuo pipefail
+
+sqlite3 ../.tmp/outage.db \
+	| cat
