@@ -1,0 +1,43 @@
+name: build calendars
+
+on:
+  push:
+    branches:
+      - master
+  schedule:
+    - cron: '0 * * * *'
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: initialize
+        run: |
+          sudo apt-get install -y jq moreutils sqlite3
+      - name: build
+        run: |
+          ./outage
+      - name: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: calendars
+          path: ./out
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: download
+        uses: actions/download-artifact@v4
+        with:
+          name: calendars
+      - name: setup
+        run: |
+          ln -s last-updated.txt index.html
+      - name: deploy
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: .
