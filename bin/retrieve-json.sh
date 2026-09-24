@@ -1,4 +1,4 @@
-set -TEeuo pipefail
+set -Eeuo pipefail
 
 declare -r CACHE_DIR="${1?no cache dir}"
 
@@ -11,5 +11,5 @@ fi
 
 mkdir --parents -- "$CACHE_DIR"
 
-curl 'https://api.loe.lviv.ua/api/menus?page=1&type=photo-grafic' \
+curl --fail --show-error --location --retry 3 --connect-timeout 10 'https://api.loe.lviv.ua/api/menus?page=1&type=photo-grafic' \
 	| ifne tee "$CACHE"

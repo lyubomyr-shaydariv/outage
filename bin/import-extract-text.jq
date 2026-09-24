@@ -1,4 +1,4 @@
-."hydra:member".[0].menuItems
+."hydra:member"?[0].menuItems
 | ..
 | objects
 | select(has("rawHtml") and (.rawHtml | length > 0))

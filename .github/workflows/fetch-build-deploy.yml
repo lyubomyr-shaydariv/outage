@@ -12,6 +12,8 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
+    env:
+      TZ: Europe/Kyiv
     steps:
       - uses: actions/checkout@v7
       - name: initialize

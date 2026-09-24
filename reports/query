@@ -1,6 +1,9 @@
 #!/bin/bash
 
-set -TEeuo pipefail
+set -Eeuo pipefail
 
-sqlite3 ../.tmp/outage.db \
-	| cat
+BASE_DIR="$(readlink --canonicalize-existing -- "$0")"
+BASE_DIR="$(dirname -- "$BASE_DIR")"
+declare -r BASE_DIR
+
+sqlite3 "$BASE_DIR/../.tmp/outage.db"

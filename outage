@@ -1,17 +1,25 @@
 #!/bin/bash
 
-set -TEeuo pipefail
+set -Eeuo pipefail
 
-declare -r BIN_DIR='./bin'
-declare -r CACHE_DIR='./.cache'
-declare -r OUT_DUR='./out'
-declare -r TMP_DIR='./.tmp'
+BASE_DIR="$(readlink --canonicalize-existing -- "$0")"
+BASE_DIR="$(dirname -- "$BASE_DIR")"
+declare -r BASE_DIR
+
+declare -r BIN_DIR="$BASE_DIR/bin"
+declare -r CACHE_DIR="$BASE_DIR/.cache"
+declare -r OUT_DIR="$BASE_DIR/out"
+declare -r TMP_DIR="$BASE_DIR/.tmp"
 
 say() {
-	echo -e "\e[0;36m$0: \e[0m$@" >&2
+	echo -e "\e[0;36m$0: \e[0m$*" >&2
 }
 
-mkdir --parents -- "$CACHE_DIR" "$OUT_DUR"
+mkdir --parents -- "$CACHE_DIR"
+if [[ -d "$OUT_DIR" ]]; then
+	rm --recursive -- "$OUT_DIR"
+fi
+mkdir --parents -- "$OUT_DIR"
 if [[ -d "$TMP_DIR" ]]; then
 	rm --recursive -- "$TMP_DIR"
 fi
@@ -19,8 +27,8 @@ mkdir --parents -- "$TMP_DIR"
 
 say 'importing to sqlite...'
 {
-	say '#1: download json'
-	bash -- "$BIN_DIR"/download-json.sh "$CACHE_DIR" \
+	say '#1: retrieve json'
+	bash -- "$BIN_DIR"/retrieve-json.sh "$CACHE_DIR" \
 		| ifne tee -- "$TMP_DIR"/outage.json
 } \
 	| {
@@ -31,13 +39,14 @@ say 'importing to sqlite...'
 	} \
 	| {
 		say '#3: tabularize data'
-		awk -f "$BIN_DIR"/import-tabularize.awk \
+		awk --file "$BIN_DIR"/import-tabularize.awk \
 			| ifne tee -- "$TMP_DIR"/outage.tsv
 	} \
 	| {
 		say '#4: import data'
-		sqlite3 -batch -tabs -- "$TMP_DIR"/outage.db < "$BIN_DIR"/create-scheme.sql
+		sqlite3 -batch -tabs -- "$TMP_DIR"/outage.db < "$BIN_DIR"/create-schema.sql
 		sqlite3 -batch -tabs -- "$TMP_DIR"/outage.db ".import '|cat -' outage"
+		sqlite3 -batch -tabs -- "$TMP_DIR"/outage.db 'VACUUM;'
 	}
 say 'importing to sqlite done'
 
@@ -45,11 +54,11 @@ say 'querying and exporting from sqlite...'
 while IFS=$'\t' read -r GROUP _; do
 	while IFS=$'\t' read -r ID BEGIN END _; do
 		printf '%s\t%s\t%s\n' "$ID" "$BEGIN" "$END"
-	done < <(sqlite3 -batch -tabs -cmd ".parameter set :group '$GROUP'" -- "$TMP_DIR"/outage.db < "$BIN_DIR"/select-events.sql) \
+	done < <(sqlite3 -batch -tabs -cmd ".parameter set :group '${GROUP//\'/\'\'}'" -- "$TMP_DIR"/outage.db < "$BIN_DIR"/select-events.sql) \
 		| {
 			say "exporting group $GROUP..."
-			awk -f "$BIN_DIR"/export-calendarize.awk -v GROUP="$GROUP" \
-				> "$OUT_DUR/$GROUP.ics"
+			awk --file="$BIN_DIR"/export-calendarize.awk --assign GROUP="$GROUP" \
+				> "$OUT_DIR/$GROUP.ics"
 			say "exporting group $GROUP done"
 		}
 done < <(sqlite3 -tabs -- "$TMP_DIR"/outage.db < "$BIN_DIR"/select-groups.sql)
